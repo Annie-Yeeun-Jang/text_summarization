@@ -24,9 +24,9 @@ class Trainer(object):
     def __init__(self, args, rank=0):
         super(Trainer, self).__init__()
         self.dataset_dir = args.dataset_dir
-        self.max_len = 700#args.max_len
+        self.max_len = args.max_len
         self.world_size = args.gpus
-        self.rank = "cuda"#torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')#rank
+        self.rank = rank
         self.train_batch_size = args.train_batch_size
         self.eval_batch_size = args.eval_batch_size
         self.epochs = args.epochs
@@ -94,7 +94,7 @@ class Trainer(object):
                         #trg = toSimpleChinese(trg)
                         trg_data.append(trg)
             '''
-            
+            #에러 여기서 남 => append 안하고 있었을걸
             encoded_dict = self.tokenizer.batch_encode_plus(src_data, add_special_tokens=True, max_length=200, \
                                 padding='max_length', return_attention_mask=True, truncation=True, return_tensors='pt')
             src_input_ids = encoded_dict['input_ids']
@@ -103,8 +103,10 @@ class Trainer(object):
 
             if not is_test:
                 trg_input_ids, trg_ground_ids, trg_attention_masks = [], [], []
+                #print("trg_data: ", trg_data)
                 for text in trg_data:
                     # encode text without trunction
+                    #print("text: ", text)
                     encoded_text = self.tokenizer(text)
                     trg_ids, trg_attention_mask = encoded_text['input_ids'], encoded_text['attention_mask']
                     if len(trg_ids) > self.max_len:
@@ -127,7 +129,7 @@ class Trainer(object):
                 data = {
                     'src_input_ids': src_input_ids, 'src_attention_masks': src_attention_masks
                 }
-        torch.save(data, loader_file) #딕셔너리를 그냥 .pt로 저장한것
+        torch.save(data, loader_file) #딕셔너리를 그냥 .pt로 저장한거임
         return data
 
     def load_test_data(self, file_name, loader_name):
@@ -153,7 +155,7 @@ class Trainer(object):
                                         # input_ids, attention_mask 같은거 딕셔너리로 리턴
             encoded_dict = self.tokenizer.batch_encode_plus(src_data, add_special_tokens=True, max_length=self.max_len, padding='max_length',return_attention_mask=True, truncation=True, return_tensors='pt')
             src_input_ids = encoded_dict['input_ids'] #그래서 여기서 키로 접근중
-            src_attention_masks = encoded_dict['attention_mask'] #mask만 따로 뺌
+            src_attention_masks = encoded_dict['attention_mask'] #mask만 따로 빼네
             data = {
                 'src_input_ids': src_input_ids, 'src_attention_masks': src_attention_masks
             }
@@ -179,7 +181,7 @@ class Trainer(object):
             dataset_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
         return dataset_loader
 
-    def cal_performance(self, logits, ground, smoothing=True):
+    def cal_performance(self, logits, ground, smoothing=False):
         logits = logits.contiguous().view(-1, logits.size(-1))
         ground = ground.contiguous().view(-1)
 
@@ -192,7 +194,7 @@ class Trainer(object):
         total_words = pad_mask.sum().item()
         return loss, correct, total_words
 
-    def cal_loss(self, logits, ground, smoothing=True):
+    def cal_loss(self, logits, ground, smoothing=False):
         def label_smoothing(logits, labels):
             eps = 0.1
             num_classes = logits.size(-1)
@@ -200,7 +202,7 @@ class Trainer(object):
             # >>> z = torch.zeros(2, 4).scatter_(1, torch.tensor([[2], [3]]), 1.23)
             # >>> z
             # tensor([[ 0.0000,  0.0000,  1.2300,  0.0000],
-            #        [ 0.0000,  0.0000,  0.0000,  1.2300]])ca
+            #        [ 0.0000,  0.0000,  0.0000,  1.2300]])
             one_hot = torch.zeros_like(logits).scatter(1, labels.view(-1, 1), 1)
             one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (num_classes - 1)
             log_prb = F.log_softmax(logits, dim=1)
@@ -234,14 +236,14 @@ class Trainer(object):
         param_optimizer = list(model.named_parameters())
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
         optimizer_grouped_parameters = [
-            {'params': model.encoder.parameters(), 'lr': 1e-3, 'weight_decay': 0.0},
-            {'params': model.tgt_embed.parameters(), 'lr': 1e-3, 'weight_decay': 0.0},
-            {'params': model.decoder.parameters(),'lr': 1e-2,'weight_decay': 0.0},
-            {'params': model.p_vocab.parameters(),'lr': 1e-2, 'weight_decay': 0.0},
-            {'params': model.p_gen.parameters(), 'lr': 1e-2, 'weight_decay': 0.0}
+            {'params': model.encoder.parameters(), 'lr': 1e-6, 'weight_decay': 0.01},
+            {'params': model.tgt_embed.parameters(), 'lr': 1e-6, 'weight_decay': 0.01},
+            {'params': model.decoder.parameters(), 'weight_decay': 0.01},
+            {'params': model.p_vocab.parameters(), 'weight_decay': 0.01},
+            {'params': model.p_gen.parameters(), 'weight_decay': 0.01}
             ]
-        optimizer = AdamW(optimizer_grouped_parameters, eps=1e-4)
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=400, num_training_steps=total_steps)
+        optimizer = AdamW(optimizer_grouped_parameters, lr=5e-4, eps=1e-8)
+        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=4000, num_training_steps=total_steps)
 
         is_best = False
         curr_valid_loss = 0
@@ -261,7 +263,7 @@ class Trainer(object):
                 
                 outputs = model(src_input_ids, src_input_masks, trg_input_ids, trg_input_masks)
                 
-                loss, n_correct, n_word = self.cal_performance(outputs, trg_ground_ids, smoothing=True)
+                loss, n_correct, n_word = self.cal_performance(outputs, trg_ground_ids, smoothing=False)
               
                 loss.backward()
                 
@@ -291,7 +293,7 @@ class Trainer(object):
                     best_valid_epoch = epoch
                     epochs_no_improve = 0
                     torch.save(model, './model_dict/model.pt')
-            if epochs_no_improve > 7:
+            if epochs_no_improve > 3:
                 self.logger.info("No best dev loss, stop training.")
                 break
 
@@ -316,7 +318,7 @@ class Trainer(object):
                 predictions = output.topk(1)[1].squeeze()
 
                 # Compute loss
-                loss, n_correct, n_word = self.cal_performance(output, trg_ground_ids, smoothing=True)
+                loss, n_correct, n_word = self.cal_performance(output, trg_ground_ids, smoothing=False)
                 correct_words += n_correct
                 total_words += n_word
                 # -------------
@@ -478,7 +480,7 @@ class Trainer(object):
                 predictions = predictions * trg_input_masks
 
                 # Compute loss
-                loss, n_correct, n_word = self.cal_performance(output, trg_ground_ids, smoothing=True)
+                loss, n_correct, n_word = self.cal_performance(output, trg_ground_ids, smoothing=False)
                 accuracy = float(100.0 * n_correct) / n_word
 
                 if accuracy < 95.0:

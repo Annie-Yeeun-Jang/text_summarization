@@ -15,11 +15,11 @@ def main():
                         help='name of test file')    
     parser.add_argument('--vocab_path', default='./model_dict/vocab.txt',
                         help='vocab path for pre-trained model')
-    parser.add_argument('--max_len', type=int, default=700, 
+    parser.add_argument('--max_len', type=int, default=200, 
                         help='vocab path for pre-trained model')
-    parser.add_argument('--train_batch_size', type=int, default=8, 
+    parser.add_argument('--train_batch_size', type=int, default=4, 
                         help='batch size for training')
-    parser.add_argument('--eval_batch_size', type=int, default=8, 
+    parser.add_argument('--eval_batch_size', type=int, default=2, 
                         help='batch size for evaluating')
     parser.add_argument('--epochs', default=200, type=int,
                         help='number of epochs for training')

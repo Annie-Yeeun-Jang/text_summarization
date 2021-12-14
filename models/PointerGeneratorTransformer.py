@@ -17,9 +17,9 @@ import copy
 import logging
 
 class PointerGeneratorTransformer(nn.Module):
-    def __init__(self, rank="cuda", src_vocab_size=50000, tgt_vocab_size=50000,
+    def __init__(self, rank=0, src_vocab_size=128, tgt_vocab_size=128,
                  inv_vocab=None, pad_id=0,
-                 embedding_dim=768*2, fcn_hidden_dim=3072*2,
+                 embedding_dim=768, fcn_hidden_dim=3072,
                  num_heads=12, num_layers=8, dropout=0.1,
                  max_len=200):
         super(PointerGeneratorTransformer, self).__init__()
@@ -32,15 +32,13 @@ class PointerGeneratorTransformer(nn.Module):
         # Encoder layers
         self.config = BertConfig.from_pretrained('bert-base-uncased')
         self.encoder = BertModel.from_pretrained('bert-base-uncased')
-        #for param in self.encoder.bert.parameters():
-            #param.requires_grad = False
         
         # Source and target embeddings
         # using word embeddings from pre-trained bert
         self.tgt_embed = copy.deepcopy(self.encoder.embeddings)
 
         # Decoder layers
-        # 원래 주석임 self.decoder_layer = TransformerDecoderLayer(d_model=embedding_dim, nhead=num_heads, dim_feedforward=fcn_hidden_dim, dropout=dropout)
+        # self.decoder_layer = TransformerDecoderLayer(d_model=embedding_dim, nhead=num_heads, dim_feedforward=fcn_hidden_dim, dropout=dropout)
         self.decoder = TransformerDecoder(num_layers)
 
         # Final linear layer + softmax. for probability over target vocabulary
